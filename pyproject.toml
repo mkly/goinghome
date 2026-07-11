@@ -1,0 +1,15 @@
+[project]
+name = "gametime"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "numpy>=2.5.1",
+    "pandas>=3.0.3",
+    "pybaseball>=2.2.7",
+    "requests>=2.34.2",
+    "scikit-learn>=1.9.0",
+    "streamlit>=1.59.1",
+    "xgboost>=3.3.0",
+]

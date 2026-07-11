@@ -1,0 +1,87 @@
+import pandas as pd
+import numpy as np
+import requests
+import time
+from pybaseball import statcast
+
+print("Step 1: Extracting Raw Statcast Data...")
+# Using a 1-month sample for the script.
+# Change dates to '2023-03-30' to '2026-07-11' for the full era.
+df = statcast(start_dt='2024-04-01', end_dt='2024-04-30')
+
+print("Step 2: Engineering Features in Memory...")
+# Sort chronologically
+df = df.sort_values(by=['game_date', 'game_pk',
+                    'at_bat_number', 'pitch_number']).reset_index(drop=True)
+
+# Build the game state features
+df['on_1b'] = df['on_1b'].notna().astype(int)
+df['on_2b'] = df['on_2b'].notna().astype(int)
+df['on_3b'] = df['on_3b'].notna().astype(int)
+df['total_runs'] = df['bat_score'] + df['fld_score']
+df['run_diff'] = abs(df['bat_score'] - df['fld_score'])
+
+# Build the lead feature
+df['is_home_leading'] = np.where(
+    (df['inning_topbot'] == 'Top') & (df['fld_score'] > df['bat_score']), 1,
+    np.where((df['inning_topbot'] == 'Bot') & (
+        df['bat_score'] > df['fld_score']), 1, 0)
+)
+
+# Build the personnel features
+df['is_home_pitching'] = (df['inning_topbot'] == 'Top')
+df['pitcher_team'] = np.where(
+    df['is_home_pitching'], df['home_team'], df['away_team'])
+df['pitchers_used'] = df.groupby(['game_pk', 'pitcher_team'])[
+    'pitcher'].transform(lambda x: x.factorize()[0] + 1)
+df['is_starter_pitching'] = np.where(df['pitchers_used'] == 1, 1, 0)
+
+# DROP THE BLOAT: Only keep what we absolutely need moving forward
+core_features = [
+    'game_pk', 'inning', 'outs_when_up', 'run_diff', 'is_home_leading',
+    'on_1b', 'on_2b', 'on_3b', 'total_runs', 'pitchers_used', 'is_starter_pitching'
+]
+df = df[core_features]
+
+print("Step 3: Fetching API Metadata...")
+unique_games = df['game_pk'].unique()
+game_metadata = []
+
+for count, game_id in enumerate(unique_games):
+    try:
+        url = f"https://statsapi.mlb.com/api/v1.1/game/{game_id}/feed/live"
+        response = requests.get(url).json()
+        game_info = response['gameData']['gameInfo']
+
+        attendance = game_info.get('attendance', 0)
+        temp = response['gameData']['weather'].get('temp', 70)
+        is_dome = 1 if response['gameData']['weather'].get(
+            'condition', '') == 'Dome' else 0
+        duration = game_info.get('gameDurationMinutes', 160)
+
+        game_metadata.append({
+            'game_pk': game_id,
+            'attendance': attendance,
+            'temp': int(temp),
+            'is_dome': is_dome,
+            'final_game_minutes': int(duration)
+        })
+    except Exception:
+        pass  # Skip missing games
+
+    # Rate limiting to respect the MLB API
+    time.sleep(0.1)
+
+metadata_df = pd.DataFrame(game_metadata)
+
+print("Step 4: Merging and Pickling...")
+# Merge the API data into our lean Statcast dataframe
+master_df = pd.merge(df, metadata_df, on='game_pk', how='left')
+master_df = master_df.dropna(subset=['final_game_minutes'])
+
+# Drop the game_pk identifier (XGBoost doesn't need it)
+master_df = master_df.drop(columns=['game_pk'])
+
+# Save exactly what the model needs to a highly compressed pickle file
+master_df.to_pickle('mlb_training_data_clean.pkl')
+print("SUCCESS! File saved as 'mlb_training_data_clean.pkl'.")
