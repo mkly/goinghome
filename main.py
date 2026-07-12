@@ -175,12 +175,15 @@ def main():
             if model:
                 # Convert dict to single-row dataframe for XGBoost
                 live_df = pd.DataFrame([state_dict])
+                if hasattr(model, 'feature_names_in_'):
+                    live_df = live_df[model.feature_names_in_]
+                
                 predicted_total_mins = model.predict(live_df)[0]
             else:
                 # Mock math if no model is loaded: baseline 155 mins + extra for runs/pitchers
                 predicted_total_mins = 155 + \
                     (state_dict['total_runs'] * 3) + \
-                    (state_dict['pitchers_used'] * 2)
+                    ((state_dict['home_pitchers_used'] + state_dict['away_pitchers_used']) * 2)
 
             # Calculate elapsed time from the game's scheduled start time
             # MLB API returns start_time in UTC (e.g., '2026-07-11T20:10:00Z')
