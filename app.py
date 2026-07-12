@@ -1,6 +1,11 @@
 import streamlit as st
 import requests
 import pandas as pd
+pd.options.mode.string_storage = "python"
+try:
+    pd.options.future.infer_string = False
+except Exception:
+    pass
 from datetime import datetime, timedelta
 import pickle
 
@@ -11,13 +16,12 @@ st.set_page_config(page_title="MLB Duration Predictor",
                    page_icon="⚾", layout="centered")
 
 
+@st.cache_resource
 def load_model():
     """Loads the XGBoost model."""
     try:
         with open('xgb_live_model.pkl', 'rb') as f:
-            m = pickle.load(f)
-            m.set_params(n_jobs=1)
-            return m
+            return pickle.load(f)
     except FileNotFoundError:
         return None
 
@@ -99,29 +103,28 @@ def get_live_game_state(game_pk, is_national_tv=0, is_night_game=0):
         pitching_team_key, {}).get('pitchers', []))
     is_starter_pitching = 1 if pitchers_used <= 1 else 0
 
-    # Extract Environment
-    attendance = game_info.get('attendance')
-    if attendance is None or attendance == 0:
-        # Fallback to team's average home attendance
-        home_team_id = response.get('gameData', {}).get('teams', {}).get('home', {}).get('id')
-        season = response.get('gameData', {}).get('game', {}).get('season', '2024')
-        try:
-            att_url = f"https://statsapi.mlb.com/api/v1/attendance?teamId={home_team_id}&season={season}"
-            att_resp = requests.get(att_url).json()
-            attendance = att_resp['records'][0]['attendanceAverageHome']
-        except Exception:
-            attendance = 25000  # Ultimate fallback
-            
-    temp = weather_info.get('temp', 70)
     is_dome = 1 if weather_info.get('condition', '') == 'Dome' else 0
 
+    # New Context Features
+    home_div = response.get('gameData', {}).get('teams', {}).get('home', {}).get('division', {}).get('id')
+    away_div = response.get('gameData', {}).get('teams', {}).get('away', {}).get('division', {}).get('id')
+    is_rivalry = 1 if home_div == away_div and home_div is not None else 0
+
+    home_pitches = boxscore.get('teams', {}).get('home', {}).get('teamStats', {}).get('pitching', {}).get('numberOfPitches', 0)
+    away_pitches = boxscore.get('teams', {}).get('away', {}).get('teamStats', {}).get('pitching', {}).get('numberOfPitches', 0)
+    total_pitch_count = int(home_pitches) + int(away_pitches)
+
+    home_pa = boxscore.get('teams', {}).get('home', {}).get('teamStats', {}).get('batting', {}).get('plateAppearances', 0)
+    away_pa = boxscore.get('teams', {}).get('away', {}).get('teamStats', {}).get('batting', {}).get('plateAppearances', 0)
+    total_pa = int(home_pa) + int(away_pa)
+
     state = {
-        'inning': inning, 'outs_when_up': outs, 'run_diff': run_diff,
-        'is_home_leading': is_home_leading, 'on_1b': on_1b, 'on_2b': on_2b,
-        'on_3b': on_3b, 'total_runs': total_runs, 'pitchers_used': pitchers_used,
-        'is_starter_pitching': is_starter_pitching, 'attendance': attendance,
-        'temp': int(temp), 'is_dome': is_dome, 'is_national_tv': is_national_tv,
-        'is_night_game': is_night_game
+        'inning': int(inning), 'outs_when_up': int(outs), 'run_diff': int(run_diff),
+        'is_home_leading': int(is_home_leading), 'on_1b': int(on_1b), 'on_2b': int(on_2b),
+        'on_3b': int(on_3b), 'total_runs': int(total_runs), 'pitchers_used': int(pitchers_used),
+        'is_starter_pitching': int(is_starter_pitching), 'total_pitch_count': int(total_pitch_count),
+        'total_pa': int(total_pa), 'is_dome': int(is_dome), 'is_national_tv': int(is_national_tv),
+        'is_night_game': int(is_night_game), 'is_rivalry': int(is_rivalry)
     }
 
     inning_half = "Top" if is_home_pitching else "Bot"
@@ -152,10 +155,15 @@ else:
     # Create Dropdown Dictionary
     game_options = {game['matchup']: game for game in live_games}
     selected_matchup = st.selectbox(
-        "Select a Matchup:", list(game_options.keys()))
-    selected_game = game_options[selected_matchup]
+        "Select a Matchup:", 
+        options=list(game_options.keys()), 
+        index=None, 
+        placeholder="Choose a live game to predict..."
+    )
 
-    if st.button("🚀 Predict Live State", type="primary", use_container_width=True):
+    if selected_matchup:
+        selected_game = game_options[selected_matchup]
+        
         with st.spinner(f"Pulling live data for {selected_matchup}..."):
             state_dict, summary = get_live_game_state(selected_game['id'], selected_game.get('is_national_tv', 0), selected_game.get('is_night_game', 0))
 
@@ -172,36 +180,50 @@ else:
             minutes_elapsed = max(0, (current_time_utc - start_time_utc).total_seconds() / 60)
             mins_remaining = float(predicted_total_mins) - minutes_elapsed
 
-            # --- DISPLAY RESULTS ---
-            st.divider()
-            st.subheader(f"Current State: {summary}")
+        # --- DISPLAY RESULTS ---
+        st.divider()
+        st.subheader(f"Current State: {summary}")
 
-            # Show all model input features
-            st.write("**Model Input Features:**")
-            cols = st.columns(4)
-            for i, (key, value) in enumerate(state_dict.items()):
-                cols[i % 4].metric(key, value)
+        # Big Prediction Metrics
+        st.markdown("### 🔮 Model Forecast")
+        res_col1, res_col2, res_col3 = st.columns(3)
 
-            st.divider()
-
-            # Big Prediction Metrics
-            st.markdown("### 🔮 Model Forecast")
-            res_col1, res_col2 = st.columns(2)
-
-            with res_col1:
+        with res_col1:
+            if mins_remaining > 0:
+                expected_end_time = datetime.now().astimezone() + timedelta(minutes=mins_remaining)
+                end_time_str = expected_end_time.strftime("%I:%M %p %Z").lstrip("0")
                 st.metric(
-                    label="Projected Total Duration",
-                    value=f"{predicted_total_mins:.1f} mins"
+                    label="Expected End Time",
+                    value=end_time_str
+                )
+            else:
+                st.metric(
+                    label="Expected End Time",
+                    value="Any minute now!"
                 )
 
-            with res_col2:
-                if mins_remaining > 0:
-                    st.metric(
-                        label="Estimated Time Remaining",
-                        value=f"{mins_remaining:.1f} mins"
-                    )
-                else:
-                    st.metric(
-                        label="Status",
-                        value="Game is wrapping up!"
-                    )
+        with res_col2:
+            st.metric(
+                label="Projected Total Duration",
+                value=f"{predicted_total_mins:.1f} mins"
+            )
+
+        with res_col3:
+            if mins_remaining > 0:
+                st.metric(
+                    label="Estimated Time Remaining",
+                    value=f"{mins_remaining:.1f} mins"
+                )
+            else:
+                st.metric(
+                    label="Status",
+                    value="Game is wrapping up!"
+                )
+
+        st.divider()
+
+        # Show all model input features
+        st.write("**Model Input Features:**")
+        cols = st.columns(4)
+        for i, (key, value) in enumerate(state_dict.items()):
+            cols[i % 4].metric(key, value)

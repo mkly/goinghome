@@ -6,7 +6,7 @@ from xgboost import XGBRegressor
 df = pd.read_pickle('mlb_training_data_clean.pkl')
 
 # 2. Separate Features (X) and Target (y)
-X = df.drop(columns=['final_game_minutes'])
+X = df.drop(columns=['final_game_minutes', 'attendance', 'temp'])
 y = df['final_game_minutes']
 
 # 3. Train the Model
