@@ -142,23 +142,21 @@ else:
             # Calculate Time Remaining
             start_time_utc = datetime.strptime(
                 selected_game['start_time'], "%Y-%m-%dT%H:%M:%SZ")
-            predicted_end_time_utc = start_time_utc + \
-                timedelta(minutes=float(predicted_total_mins))
             current_time_utc = datetime.utcnow()
-            mins_remaining = (predicted_end_time_utc -
-                              current_time_utc).total_seconds() / 60
+            
+            # Prevent negative elapsed time if the game hasn't reached its scheduled start yet
+            minutes_elapsed = max(0, (current_time_utc - start_time_utc).total_seconds() / 60)
+            mins_remaining = float(predicted_total_mins) - minutes_elapsed
 
             # --- DISPLAY RESULTS ---
             st.divider()
             st.subheader(f"Current State: {summary}")
 
-            # Show game details in a clean row
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Run Diff", state_dict['run_diff'])
-            col2.metric("Pitchers Used", state_dict['pitchers_used'])
-            col3.metric("Bases Loaded?", "Yes" if sum(
-                [state_dict['on_1b'], state_dict['on_2b'], state_dict['on_3b']]) == 3 else "No")
-            col4.metric("Temp", f"{state_dict['temp']}°F")
+            # Show all model input features
+            st.write("**Model Input Features:**")
+            cols = st.columns(4)
+            for i, (key, value) in enumerate(state_dict.items()):
+                cols[i % 4].metric(key, value)
 
             st.divider()
 
