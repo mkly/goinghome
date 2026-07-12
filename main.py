@@ -181,8 +181,8 @@ def main():
             # Calculate elapsed time from the game's scheduled start time
             # MLB API returns start_time in UTC (e.g., '2026-07-11T20:10:00Z')
             start_time_utc = datetime.strptime(
-                selected_game['start_time'], "%Y-%m-%dT%H:%M:%SZ")
-            current_time_utc = datetime.utcnow()
+                selected_game['start_time'], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+            current_time_utc = datetime.now(timezone.utc)
 
             # Prevent negative elapsed time if the game hasn't reached its scheduled start yet
             minutes_elapsed = max(0, (current_time_utc - start_time_utc).total_seconds() / 60)

@@ -172,9 +172,10 @@ else:
             predicted_total_mins = model.predict(live_df)[0]
 
             # Calculate Time Remaining
+            from datetime import timezone
             start_time_utc = datetime.strptime(
-                selected_game['start_time'], "%Y-%m-%dT%H:%M:%SZ")
-            current_time_utc = datetime.utcnow()
+                selected_game['start_time'], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+            current_time_utc = datetime.now(timezone.utc)
             
             # Prevent negative elapsed time if the game hasn't reached its scheduled start yet
             minutes_elapsed = max(0, (current_time_utc - start_time_utc).total_seconds() / 60)
