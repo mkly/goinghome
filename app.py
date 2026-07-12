@@ -11,12 +11,13 @@ st.set_page_config(page_title="MLB Duration Predictor",
                    page_icon="⚾", layout="centered")
 
 
-@st.cache_resource
 def load_model():
-    """Loads the XGBoost model once and caches it in memory."""
+    """Loads the XGBoost model."""
     try:
         with open('xgb_live_model.pkl', 'rb') as f:
-            return pickle.load(f)
+            m = pickle.load(f)
+            m.set_params(n_jobs=1)
+            return m
     except FileNotFoundError:
         return None
 
@@ -31,7 +32,7 @@ model = load_model()
 def get_todays_games():
     """Fetches all live MLB games happening today."""
     today = datetime.today().strftime('%Y-%m-%d')
-    url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={today}"
+    url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={today}&hydrate=broadcasts"
 
     response = requests.get(url).json()
     if response['totalGames'] == 0:
@@ -45,16 +46,27 @@ def get_todays_games():
         if game['status']['abstractGameState'] == 'Live':
             away_team = game['teams']['away']['team']['name']
             home_team = game['teams']['home']['team']['name']
+            
+            is_national = 0
+            for b in game.get('broadcasts', []):
+                if b.get('isNational', False) and b.get('type', '') == 'TV':
+                    is_national = 1
+                    break
+                    
+            is_night = 1 if game.get('dayNight', '') == 'night' else 0
+
             live_games.append({
                 'id': game['gamePk'],
                 'matchup': f"{away_team} @ {home_team}",
-                'start_time': game['gameDate']
+                'start_time': game['gameDate'],
+                'is_national_tv': is_national,
+                'is_night_game': is_night
             })
 
     return live_games
 
 
-def get_live_game_state(game_pk):
+def get_live_game_state(game_pk, is_national_tv=0, is_night_game=0):
     """Pulls the pitch-by-pitch state required for our XGBoost model."""
     url = f"https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live"
     response = requests.get(url).json()
@@ -88,7 +100,18 @@ def get_live_game_state(game_pk):
     is_starter_pitching = 1 if pitchers_used <= 1 else 0
 
     # Extract Environment
-    attendance = game_info.get('attendance', 25000)
+    attendance = game_info.get('attendance')
+    if attendance is None or attendance == 0:
+        # Fallback to team's average home attendance
+        home_team_id = response.get('gameData', {}).get('teams', {}).get('home', {}).get('id')
+        season = response.get('gameData', {}).get('game', {}).get('season', '2024')
+        try:
+            att_url = f"https://statsapi.mlb.com/api/v1/attendance?teamId={home_team_id}&season={season}"
+            att_resp = requests.get(att_url).json()
+            attendance = att_resp['records'][0]['attendanceAverageHome']
+        except Exception:
+            attendance = 25000  # Ultimate fallback
+            
     temp = weather_info.get('temp', 70)
     is_dome = 1 if weather_info.get('condition', '') == 'Dome' else 0
 
@@ -97,7 +120,8 @@ def get_live_game_state(game_pk):
         'is_home_leading': is_home_leading, 'on_1b': on_1b, 'on_2b': on_2b,
         'on_3b': on_3b, 'total_runs': total_runs, 'pitchers_used': pitchers_used,
         'is_starter_pitching': is_starter_pitching, 'attendance': attendance,
-        'temp': int(temp), 'is_dome': is_dome
+        'temp': int(temp), 'is_dome': is_dome, 'is_national_tv': is_national_tv,
+        'is_night_game': is_night_game
     }
 
     inning_half = "Top" if is_home_pitching else "Bot"
@@ -133,7 +157,7 @@ else:
 
     if st.button("🚀 Predict Live State", type="primary", use_container_width=True):
         with st.spinner(f"Pulling live data for {selected_matchup}..."):
-            state_dict, summary = get_live_game_state(selected_game['id'])
+            state_dict, summary = get_live_game_state(selected_game['id'], selected_game.get('is_national_tv', 0), selected_game.get('is_night_game', 0))
 
             # Make the Prediction
             live_df = pd.DataFrame([state_dict])
