@@ -176,7 +176,8 @@ def main():
                 # Convert dict to single-row dataframe for XGBoost
                 live_df = pd.DataFrame([state_dict])
                 if hasattr(model, 'feature_names_in_'):
-                    live_df = live_df[model.feature_names_in_]
+                    live_df = live_df.reindex(
+                        columns=model.feature_names_in_, fill_value=0)
                 
                 predicted_total_mins = model.predict(live_df)[0]
             else:
