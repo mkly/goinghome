@@ -47,6 +47,24 @@ print("Step 3: Fetching API Metadata...")
 unique_games = df['game_pk'].unique()
 game_metadata = []
 
+# Fetch broadcasts for the whole month in one go to save time
+schedule_url = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=2024-04-01&endDate=2024-04-30&hydrate=broadcasts"
+schedule_resp = requests.get(schedule_url).json()
+game_info_map = {}
+
+if 'dates' in schedule_resp:
+    for date_obj in schedule_resp['dates']:
+        for game_obj in date_obj.get('games', []):
+            g_id = game_obj['gamePk']
+            is_national = 0
+            broadcasts = game_obj.get('broadcasts', [])
+            for b in broadcasts:
+                if b.get('isNational', False) and b.get('type', '') == 'TV':
+                    is_national = 1
+                    break
+            is_night = 1 if game_obj.get('dayNight', '') == 'night' else 0
+            game_info_map[g_id] = {'is_national_tv': is_national, 'is_night_game': is_night}
+
 for count, game_id in enumerate(unique_games):
     try:
         url = f"https://statsapi.mlb.com/api/v1.1/game/{game_id}/feed/live"
@@ -58,12 +76,16 @@ for count, game_id in enumerate(unique_games):
         is_dome = 1 if response['gameData']['weather'].get(
             'condition', '') == 'Dome' else 0
         duration = game_info.get('gameDurationMinutes', 160)
+        
+        info = game_info_map.get(game_id, {'is_national_tv': 0, 'is_night_game': 0})
 
         game_metadata.append({
             'game_pk': game_id,
             'attendance': attendance,
             'temp': int(temp),
             'is_dome': is_dome,
+            'is_national_tv': info['is_national_tv'],
+            'is_night_game': info['is_night_game'],
             'final_game_minutes': int(duration)
         })
     except Exception:
