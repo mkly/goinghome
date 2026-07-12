@@ -95,38 +95,29 @@ def get_live_game_state(game_pk, is_national_tv=0, is_night_game=0):
     is_starter_pitching = 1 if pitchers_used <= 1 else 0
 
     # Extract Environment
-    attendance = game_info.get('attendance')
-    if attendance is None or attendance == 0:
-        # Fallback to team's average home attendance
-        home_team_id = response.get('gameData', {}).get('teams', {}).get('home', {}).get('id')
-        season = response.get('gameData', {}).get('game', {}).get('season', '2024')
-        try:
-            att_url = f"https://statsapi.mlb.com/api/v1/attendance?teamId={home_team_id}&season={season}"
-            att_resp = requests.get(att_url).json()
-            attendance = att_resp['records'][0]['attendanceAverageHome']
-        except Exception:
-            attendance = 25000  # Ultimate fallback
-            
-    temp = weather_info.get('temp', 70)
     is_dome = 1 if weather_info.get('condition', '') == 'Dome' else 0
+
+    # New Context Features
+    home_div = response.get('gameData', {}).get('teams', {}).get('home', {}).get('division', {}).get('id')
+    away_div = response.get('gameData', {}).get('teams', {}).get('away', {}).get('division', {}).get('id')
+    is_rivalry = 1 if home_div == away_div and home_div is not None else 0
+
+    home_pitches = boxscore.get('teams', {}).get('home', {}).get('teamStats', {}).get('pitching', {}).get('numberOfPitches', 0)
+    away_pitches = boxscore.get('teams', {}).get('away', {}).get('teamStats', {}).get('pitching', {}).get('numberOfPitches', 0)
+    total_pitch_count = int(home_pitches) + int(away_pitches)
+
+    home_pa = boxscore.get('teams', {}).get('home', {}).get('teamStats', {}).get('batting', {}).get('plateAppearances', 0)
+    away_pa = boxscore.get('teams', {}).get('away', {}).get('teamStats', {}).get('batting', {}).get('plateAppearances', 0)
+    total_pa = int(home_pa) + int(away_pa)
 
     # Format exactly to our XGBoost features
     state = {
-        'inning': inning,
-        'outs_when_up': outs,
-        'run_diff': run_diff,
-        'is_home_leading': is_home_leading,
-        'on_1b': on_1b,
-        'on_2b': on_2b,
-        'on_3b': on_3b,
-        'total_runs': total_runs,
-        'pitchers_used': pitchers_used,
-        'is_starter_pitching': is_starter_pitching,
-        'attendance': attendance,
-        'temp': int(temp),
-        'is_dome': is_dome,
-        'is_national_tv': is_national_tv,
-        'is_night_game': is_night_game
+        'inning': int(inning), 'outs_when_up': int(outs), 'run_diff': int(run_diff),
+        'is_home_leading': int(is_home_leading), 'on_1b': int(on_1b), 'on_2b': int(on_2b),
+        'on_3b': int(on_3b), 'total_runs': int(total_runs), 'pitchers_used': int(pitchers_used),
+        'is_starter_pitching': int(is_starter_pitching), 'total_pitch_count': int(total_pitch_count),
+        'total_pa': int(total_pa), 'is_dome': int(is_dome), 'is_national_tv': int(is_national_tv),
+        'is_night_game': int(is_night_game), 'is_rivalry': int(is_rivalry)
     }
 
     # Also return human-readable summary
@@ -203,6 +194,10 @@ def main():
             if mins_remaining > 0:
                 print(
                     f"⏳ Estimated Time Remaining: {mins_remaining:.1f} minutes")
+                
+                expected_end_time = datetime.now().astimezone() + timedelta(minutes=mins_remaining)
+                end_time_str = expected_end_time.strftime("%I:%M %p %Z").lstrip("0")
+                print(f"⏰ Expected End Time: {end_time_str}")
             else:
                 print("⏳ The model predicts this game should be ending momentarily!")
             print("-------------------------------------\n")

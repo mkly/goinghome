@@ -5,9 +5,8 @@ import time
 from pybaseball import statcast
 
 print("Step 1: Extracting Raw Statcast Data...")
-# Using a 1-month sample for the script.
-# Change dates to '2023-03-30' to '2026-07-11' for the full era.
-df = statcast(start_dt='2024-04-01', end_dt='2024-04-30')
+# Using the 2024 season (Pitch Clock Era) to avoid OOM errors
+df = statcast(start_dt='2024-03-28', end_dt='2024-07-11')
 
 print("Step 2: Engineering Features in Memory...")
 # Sort chronologically
@@ -20,6 +19,9 @@ df['on_2b'] = df['on_2b'].notna().astype(int)
 df['on_3b'] = df['on_3b'].notna().astype(int)
 df['total_runs'] = df['bat_score'] + df['fld_score']
 df['run_diff'] = abs(df['bat_score'] - df['fld_score'])
+
+df['total_pitch_count'] = df.groupby('game_pk').cumcount() + 1
+df['total_pa'] = df['at_bat_number']
 
 # Build the lead feature
 df['is_home_leading'] = np.where(
@@ -39,7 +41,8 @@ df['is_starter_pitching'] = np.where(df['pitchers_used'] == 1, 1, 0)
 # DROP THE BLOAT: Only keep what we absolutely need moving forward
 core_features = [
     'game_pk', 'inning', 'outs_when_up', 'run_diff', 'is_home_leading',
-    'on_1b', 'on_2b', 'on_3b', 'total_runs', 'pitchers_used', 'is_starter_pitching'
+    'on_1b', 'on_2b', 'on_3b', 'total_runs', 'pitchers_used', 'is_starter_pitching',
+    'total_pitch_count', 'total_pa'
 ]
 df = df[core_features]
 
@@ -47,8 +50,8 @@ print("Step 3: Fetching API Metadata...")
 unique_games = df['game_pk'].unique()
 game_metadata = []
 
-# Fetch broadcasts for the whole month in one go to save time
-schedule_url = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=2024-04-01&endDate=2024-04-30&hydrate=broadcasts"
+# Fetch broadcasts for the 2024 season
+schedule_url = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&startDate=2024-03-28&endDate=2024-07-11&hydrate=broadcasts"
 schedule_resp = requests.get(schedule_url).json()
 game_info_map = {}
 
@@ -77,6 +80,10 @@ for count, game_id in enumerate(unique_games):
             'condition', '') == 'Dome' else 0
         duration = game_info.get('gameDurationMinutes', 160)
         
+        home_div = response['gameData'].get('teams', {}).get('home', {}).get('division', {}).get('id')
+        away_div = response['gameData'].get('teams', {}).get('away', {}).get('division', {}).get('id')
+        is_rivalry = 1 if home_div == away_div and home_div is not None else 0
+
         info = game_info_map.get(game_id, {'is_national_tv': 0, 'is_night_game': 0})
 
         game_metadata.append({
@@ -86,6 +93,7 @@ for count, game_id in enumerate(unique_games):
             'is_dome': is_dome,
             'is_national_tv': info['is_national_tv'],
             'is_night_game': info['is_night_game'],
+            'is_rivalry': is_rivalry,
             'final_game_minutes': int(duration)
         })
     except Exception:
