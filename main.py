@@ -87,14 +87,14 @@ def get_live_game_state(game_pk, is_national_tv=0, is_night_game=0):
     on_2b = 1 if 'second' in offense else 0
     on_3b = 1 if 'third' in offense else 0
 
-    # Extract Pitcher Status (Are we in the bullpen?)
+    home_pitchers_used = len(boxscore.get('teams', {}).get('home', {}).get('pitchers', []))
+    away_pitchers_used = len(boxscore.get('teams', {}).get('away', {}).get('pitchers', []))
+    
     is_home_pitching = linescore.get('inningHalf', 'Top') == 'Top'
-    pitching_team_key = 'home' if is_home_pitching else 'away'
-    pitchers_used = len(boxscore.get('teams', {}).get(
-        pitching_team_key, {}).get('pitchers', []))
-    is_starter_pitching = 1 if pitchers_used <= 1 else 0
+    
+    home_starting_pitcher = 1 if home_pitchers_used <= 1 else 0
+    away_starting_pitcher = 1 if away_pitchers_used <= 1 else 0
 
-    # Extract Environment
     is_dome = 1 if weather_info.get('condition', '') == 'Dome' else 0
 
     # New Context Features
@@ -110,12 +110,16 @@ def get_live_game_state(game_pk, is_national_tv=0, is_night_game=0):
     away_pa = boxscore.get('teams', {}).get('away', {}).get('teamStats', {}).get('batting', {}).get('plateAppearances', 0)
     total_pa = int(home_pa) + int(away_pa)
 
+    is_tied = 1 if run_diff == 0 else 0
+
     # Format exactly to our XGBoost features
     state = {
         'inning': int(inning), 'outs_when_up': int(outs), 'run_diff': int(run_diff),
-        'is_home_leading': int(is_home_leading), 'on_1b': int(on_1b), 'on_2b': int(on_2b),
-        'on_3b': int(on_3b), 'total_runs': int(total_runs), 'pitchers_used': int(pitchers_used),
-        'is_starter_pitching': int(is_starter_pitching), 'total_pitch_count': int(total_pitch_count),
+        'is_home_leading': int(is_home_leading), 'is_tied': int(is_tied), 'on_1b': int(on_1b), 'on_2b': int(on_2b),
+        'on_3b': int(on_3b), 'total_runs': int(total_runs), 
+        'home_pitchers_used': int(home_pitchers_used), 'away_pitchers_used': int(away_pitchers_used),
+        'home_starting_pitcher': int(home_starting_pitcher), 'away_starting_pitcher': int(away_starting_pitcher),
+        'total_pitch_count': int(total_pitch_count),
         'total_pa': int(total_pa), 'is_dome': int(is_dome), 'is_national_tv': int(is_national_tv),
         'is_night_game': int(is_night_game), 'is_rivalry': int(is_rivalry)
     }

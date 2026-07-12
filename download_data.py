@@ -19,6 +19,7 @@ df['on_2b'] = df['on_2b'].notna().astype(int)
 df['on_3b'] = df['on_3b'].notna().astype(int)
 df['total_runs'] = df['bat_score'] + df['fld_score']
 df['run_diff'] = abs(df['bat_score'] - df['fld_score'])
+df['is_tied'] = np.where(df['run_diff'] == 0, 1, 0)
 
 df['total_pitch_count'] = df.groupby('game_pk').cumcount() + 1
 df['total_pa'] = df['at_bat_number']
@@ -31,17 +32,24 @@ df['is_home_leading'] = np.where(
 )
 
 # Build the personnel features
-df['is_home_pitching'] = (df['inning_topbot'] == 'Top')
-df['pitcher_team'] = np.where(
-    df['is_home_pitching'], df['home_team'], df['away_team'])
-df['pitchers_used'] = df.groupby(['game_pk', 'pitcher_team'])[
-    'pitcher'].transform(lambda x: x.factorize()[0] + 1)
-df['is_starter_pitching'] = np.where(df['pitchers_used'] == 1, 1, 0)
+# Build the personnel features
+# Build the personnel features
+df['home_pitcher'] = np.where(df['inning_topbot'] == 'Top', df['pitcher'], np.nan)
+df['away_pitcher'] = np.where(df['inning_topbot'] == 'Bot', df['pitcher'], np.nan)
+df['home_pitcher_ffill'] = df.groupby('game_pk')['home_pitcher'].ffill()
+df['away_pitcher_ffill'] = df.groupby('game_pk')['away_pitcher'].ffill()
+df['home_pitchers_used'] = df.groupby('game_pk')['home_pitcher_ffill'].transform(lambda x: pd.factorize(x)[0] + 1)
+df['away_pitchers_used'] = df.groupby('game_pk')['away_pitcher_ffill'].transform(lambda x: pd.factorize(x)[0] + 1)
+
+df['home_starting_pitcher'] = np.where(df['home_pitchers_used'] <= 1, 1, 0)
+df['away_starting_pitcher'] = np.where(df['away_pitchers_used'] <= 1, 1, 0)
 
 # DROP THE BLOAT: Only keep what we absolutely need moving forward
 core_features = [
-    'game_pk', 'inning', 'outs_when_up', 'run_diff', 'is_home_leading',
-    'on_1b', 'on_2b', 'on_3b', 'total_runs', 'pitchers_used', 'is_starter_pitching',
+    'game_pk', 'inning', 'outs_when_up', 'run_diff', 'is_home_leading', 'is_tied',
+    'on_1b', 'on_2b', 'on_3b', 'total_runs', 
+    'home_pitchers_used', 'away_pitchers_used', 
+    'home_starting_pitcher', 'away_starting_pitcher',
     'total_pitch_count', 'total_pa'
 ]
 df = df[core_features]
