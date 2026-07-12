@@ -39,6 +39,7 @@ def get_todays_games():
     url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={today}&hydrate=broadcasts"
 
     response = requests.get(url).json()
+    
     if response['totalGames'] == 0:
         return []
 
@@ -143,6 +144,19 @@ if model is None:
         "⚠️ 'xgb_live_model.pkl' not found. Please run the training script first.")
     st.stop()
 
+from streamlit_javascript import st_javascript
+from zoneinfo import ZoneInfo
+
+# Automatically detect the user's timezone from their browser using JS
+client_timezone = st_javascript("Intl.DateTimeFormat().resolvedOptions().timeZone")
+if isinstance(client_timezone, str):
+    try:
+        user_tz = ZoneInfo(client_timezone)
+    except Exception:
+        user_tz = None
+else:
+    user_tz = None
+
 st.write("Select a live game to calculate exactly how much time is left based on the current pitch data.")
 
 # Fetch games
@@ -191,7 +205,11 @@ else:
 
         with res_col1:
             if mins_remaining > 0:
-                expected_end_time = datetime.now().astimezone() + timedelta(minutes=mins_remaining)
+                if user_tz:
+                    expected_end_time = datetime.now(user_tz) + timedelta(minutes=mins_remaining)
+                else:
+                    expected_end_time = datetime.now().astimezone() + timedelta(minutes=mins_remaining)
+                
                 end_time_str = expected_end_time.strftime("%I:%M %p %Z").lstrip("0")
                 st.metric(
                     label="Expected End Time",
