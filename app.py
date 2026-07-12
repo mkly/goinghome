@@ -186,10 +186,13 @@ else:
             state_dict, summary = get_live_game_state(selected_game['id'], selected_game.get('is_national_tv', 0), selected_game.get('is_night_game', 0))
 
             # Make the Prediction
-            # Ensure the dataframe columns exactly match what XGBoost expects, in the exact order
+            # Match the saved model's schema. ``reindex`` also supplies a neutral
+            # value for features that may be absent when the deployed model and
+            # live-data code were produced by different releases.
             live_df = pd.DataFrame([state_dict])
             if hasattr(model, 'feature_names_in_'):
-                live_df = live_df[model.feature_names_in_]
+                live_df = live_df.reindex(
+                    columns=model.feature_names_in_, fill_value=0)
             
             predicted_total_mins = model.predict(live_df)[0]
 
