@@ -186,7 +186,11 @@ else:
             state_dict, summary = get_live_game_state(selected_game['id'], selected_game.get('is_national_tv', 0), selected_game.get('is_night_game', 0))
 
             # Make the Prediction
+            # Ensure the dataframe columns exactly match what XGBoost expects, in the exact order
             live_df = pd.DataFrame([state_dict])
+            if hasattr(model, 'feature_names_in_'):
+                live_df = live_df[model.feature_names_in_]
+            
             predicted_total_mins = model.predict(live_df)[0]
 
             # Calculate Time Remaining
