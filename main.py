@@ -163,19 +163,15 @@ def main():
                     (state_dict['total_runs'] * 3) + \
                     (state_dict['pitchers_used'] * 2)
 
-            # Calculate actual end time based on the game's start time
+            # Calculate elapsed time from the game's scheduled start time
             # MLB API returns start_time in UTC (e.g., '2026-07-11T20:10:00Z')
             start_time_utc = datetime.strptime(
                 selected_game['start_time'], "%Y-%m-%dT%H:%M:%SZ")
-            predicted_end_time_utc = start_time_utc + \
-                timedelta(minutes=float(predicted_total_mins))
-
-            # Convert to local time for output (assuming user wants local formatting)
-            # A crude offset for display purposes; a real app would use pytz or tzlocal
-            # Here we print the time remaining
             current_time_utc = datetime.utcnow()
-            mins_remaining = (predicted_end_time_utc -
-                              current_time_utc).total_seconds() / 60
+
+            # Prevent negative elapsed time if the game hasn't reached its scheduled start yet
+            minutes_elapsed = max(0, (current_time_utc - start_time_utc).total_seconds() / 60)
+            mins_remaining = float(predicted_total_mins) - minutes_elapsed
 
             print("\n-------------------------------------")
             print(
