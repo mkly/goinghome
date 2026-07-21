@@ -2,19 +2,30 @@ import requests
 import pandas as pd
 from datetime import datetime, timedelta, timezone
 from xgboost import XGBRegressor
+from huggingface_hub import hf_hub_download
 
 # ==========================================
 # 1. LOAD THE TRAINED XGBOOST MODEL
 # ==========================================
+HF_REPO_ID = "mkly/mlb-game-duration-xgboost"
+
 try:
+    # 1. Try loading directly from Hugging Face Hub
+    model_path = hf_hub_download(repo_id=HF_REPO_ID, filename="xgb_live_model.json")
     model = XGBRegressor()
-    model.load_model("xgb_live_model.json")
-    print("Model loaded successfully.\n")
-except Exception:
-    print(
-        "WARNING: 'xgb_live_model.json' not found. Using a mock predictor for demonstration.\n"
-    )
-    model = None
+    model.load_model(model_path)
+    print(f"Model loaded successfully from Hugging Face Hub ({HF_REPO_ID}).\n")
+except Exception as e:
+    # 2. Fallback to local file if offline or HF fetch fails
+    try:
+        model = XGBRegressor()
+        model.load_model("xgb_live_model.json")
+        print("Model loaded successfully from local 'xgb_live_model.json'.\n")
+    except Exception:
+        print(
+            "WARNING: Could not load model from Hugging Face Hub or local file. Using mock predictor.\n"
+        )
+        model = None
 
 # ==========================================
 # 2. MLB API HELPER FUNCTIONS

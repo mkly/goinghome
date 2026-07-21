@@ -5,6 +5,7 @@ import streamlit as st
 import requests
 import pandas as pd
 from xgboost import XGBRegressor
+from huggingface_hub import hf_hub_download
 
 pd.options.mode.string_storage = "python"
 try:
@@ -19,16 +20,24 @@ st.set_page_config(
     page_title="MLB Duration Predictor", page_icon="⚾", layout="centered"
 )
 
+HF_REPO_ID = "mkly/mlb-game-duration-xgboost"
+
 
 @st.cache_resource
 def load_model():
-    """Loads the XGBoost model."""
+    """Loads the XGBoost model from Hugging Face Hub (with local fallback)."""
     try:
+        model_path = hf_hub_download(repo_id=HF_REPO_ID, filename="xgb_live_model.json")
         model = XGBRegressor()
-        model.load_model("xgb_live_model.json")
+        model.load_model(model_path)
         return model
     except Exception:
-        return None
+        try:
+            model = XGBRegressor()
+            model.load_model("xgb_live_model.json")
+            return model
+        except Exception:
+            return None
 
 
 model = load_model()
