@@ -1,10 +1,10 @@
 from zoneinfo import ZoneInfo
 from streamlit_javascript import st_javascript
-import pickle
 from datetime import datetime, timedelta
 import streamlit as st
 import requests
 import pandas as pd
+from xgboost import XGBRegressor
 
 pd.options.mode.string_storage = "python"
 try:
@@ -24,9 +24,10 @@ st.set_page_config(
 def load_model():
     """Loads the XGBoost model."""
     try:
-        with open("xgb_live_model.pkl", "rb") as f:
-            return pickle.load(f)
-    except FileNotFoundError:
+        model = XGBRegressor()
+        model.load_model("xgb_live_model.json")
+        return model
+    except Exception:
         return None
 
 
@@ -202,7 +203,7 @@ def get_live_game_state(game_pk, is_national_tv=0, is_night_game=0):
 st.title("⚾ MLB Live Duration Predictor")
 
 if model is None:
-    st.error("⚠️ 'xgb_live_model.pkl' not found. Please run the training script first.")
+    st.error("⚠️ 'xgb_live_model.json' not found. Please run the training script first.")
     st.stop()
 
 
