@@ -1,20 +1,18 @@
 import requests
 import pandas as pd
 from datetime import datetime, timedelta, timezone
-import pickle
+from xgboost import XGBRegressor
 
 # ==========================================
 # 1. LOAD THE TRAINED XGBOOST MODEL
 # ==========================================
 try:
-    # We assume you have trained and saved the XGBoost model as a pickle file previously
-    # If not, the script will mock the prediction so the CLI still runs
-    with open("xgb_live_model.pkl", "rb") as f:
-        model = pickle.load(f)
+    model = XGBRegressor()
+    model.load_model("xgb_live_model.json")
     print("Model loaded successfully.\n")
-except FileNotFoundError:
+except Exception:
     print(
-        "WARNING: 'xgb_live_model.pkl' not found. Using a mock predictor for demonstration.\n"
+        "WARNING: 'xgb_live_model.json' not found. Using a mock predictor for demonstration.\n"
     )
     model = None
 
