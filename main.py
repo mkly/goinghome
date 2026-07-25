@@ -1,6 +1,7 @@
 import requests
 import pandas as pd
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from xgboost import XGBRegressor
 from huggingface_hub import hf_hub_download
 
@@ -34,7 +35,7 @@ except Exception as e:
 
 def get_todays_games():
     """Fetches all MLB games happening today and filters for live ones."""
-    today = datetime.today().strftime("%Y-%m-%d")
+    today = datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d")
     url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={today}&hydrate=broadcasts"
 
     response = requests.get(url).json()

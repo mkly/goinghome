@@ -49,7 +49,7 @@ model = load_model()
 
 def get_todays_games():
     """Fetches all live MLB games happening today."""
-    today = datetime.today().strftime("%Y-%m-%d")
+    today = datetime.now(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d")
     url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={today}&hydrate=broadcasts"
 
     response = requests.get(url).json()
