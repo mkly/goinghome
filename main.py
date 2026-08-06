@@ -16,7 +16,7 @@ try:
     model = XGBRegressor()
     model.load_model(model_path)
     print(f"Model loaded successfully from Hugging Face Hub ({HF_REPO_ID}).\n")
-except Exception as e:
+except Exception:
     # 2. Fallback to local file if offline or HF fetch fails
     try:
         model = XGBRegressor()
@@ -199,7 +199,7 @@ def get_live_game_state(game_pk, is_national_tv=0, is_night_game=0):
 
 def main():
     print("=====================================")
-    print("⚾ MLB LIVE GAME DURATION PREDICTOR ⚾")
+    print("MLB LIVE GAME DURATION PREDICTOR")
     print("=====================================\n")
 
     print("Fetching live games from MLB API...\n")
@@ -277,17 +277,17 @@ def main():
             mins_remaining = float(predicted_total_mins) - minutes_elapsed
 
             print("\n-------------------------------------")
-            print(f"⏱️  Predicted Total Duration: {predicted_total_mins:.1f} minutes")
+            print(f"Predicted Total Duration: {predicted_total_mins:.1f} minutes")
             if mins_remaining > 0:
-                print(f"⏳ Estimated Time Remaining: {mins_remaining:.1f} minutes")
+                print(f"Estimated Time Remaining: {mins_remaining:.1f} minutes")
 
                 expected_end_time = datetime.now().astimezone() + timedelta(
                     minutes=mins_remaining
                 )
                 end_time_str = expected_end_time.strftime("%I:%M %p %Z").lstrip("0")
-                print(f"⏰ Expected End Time: {end_time_str}")
+                print(f"Expected End Time: {end_time_str}")
             else:
-                print("⏳ The model predicts this game should be ending momentarily!")
+                print("The model predicts this game should be ending momentarily!")
             print("-------------------------------------\n")
 
         except ValueError:
