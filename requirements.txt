@@ -1,2 +1,0 @@
-streamlit-javascript
-huggingface-hub
