@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>baseball</title>
+<!-- The ball is the largest thing here by some margin and it is the last thing
+     asked for: the browser only learns about it after main.js has been fetched,
+     parsed, and has pulled in three.js behind it. Naming it up front starts the
+     download alongside the scripts instead of three round trips later. It has to
+     be as="fetch" with crossorigin to match how GLTFLoader asks for it, or the
+     preload is discarded and fetched a second time. -->
+<link rel="preload" as="fetch" type="model/gltf-binary" href="./baseball.glb" crossorigin>
+<style>
+  /* The iframe is sized and positioned by the host page's theme.css. In here we
+     just fill it edge to edge and stay transparent so the stadium shows through. */
+  html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+  }
+  canvas { display: block; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<script type="importmap">
+{
+  "imports": {
+    "three": "./three.module.min.js",
+    "three/addons/": "./"
+  }
+}
+</script>
+<script type="module" src="./main.js"></script>
+</body>
+</html>

@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 from huggingface_hub import hf_hub_download
 from xgboost import XGBRegressor
 
@@ -26,6 +27,12 @@ st.set_page_config(
 APP_DIR = Path(__file__).resolve().parent
 HF_REPO_ID = "mkly/mlb-game-duration-xgboost"
 MLB_REQUEST_TIMEOUT = 10
+
+# The tumbling baseball in the corner. Streamlit serves the frontend directory
+# itself, so three.js and the .glb are plain relative files the browser caches
+# normally. theme.css lifts the iframe out of the page flow and parks it.
+_baseball = components.declare_component(
+    "baseball_3d", path=str(APP_DIR / "frontend"))
 
 
 @st.cache_resource
@@ -53,16 +60,21 @@ def render_page_design():
     field_uri = base64.b64encode(
         (assets_dir / "citi-field-night.webp").read_bytes()
     ).decode()
-    baseball_uri = base64.b64encode(
-        (assets_dir / "baseball.webp").read_bytes()).decode()
-    css = css.replace("{{FIELD_URI}}", field_uri).replace(
-        "{{BASEBALL_URI}}", baseball_uri
-    )
+    css = css.replace("{{FIELD_URI}}", field_uri)
     st.html(
         f"""
         <style>{css}</style>
         """
     )
+    # Keyed so Streamlit reuses the same iframe across reruns instead of
+    # remounting it - the ball keeps spinning while the live game data refreshes.
+    #
+    # `spin` is read by the component: whenever the value changes it flicks the
+    # ball, so pulling up a new game sets it going. This runs before the
+    # selectbox is even created, but the widget's key is already in session state
+    # by then - Streamlit populates it from the click that triggered the rerun -
+    # so the new matchup is readable here rather than a rerun late.
+    _baseball(key="baseball_3d", spin=st.session_state.get("matchup") or "")
 
 
 def fetch_mlb_json(url):
@@ -200,13 +212,28 @@ def get_live_game_state(game_pk, is_national_tv=0, is_night_game=0):
         ),
     }
 
-    inning_half = "Top" if linescore.get(
-        "inningHalf", "Top") == "Top" else "Bottom"
-    summary = (
-        f"{inning_half} {inning} | {outs} outs | "
-        f"Away {away_score} - Home {home_score}"
-    )
-    return state, summary
+    home_team = game_data.get("teams", {}).get("home", {})
+    away_team = game_data.get("teams", {}).get("away", {})
+
+    def abbreviate(team):
+        """Broadcast-style short code, falling back to the club name."""
+        return team.get("abbreviation") or team.get("teamName", "")[:3].upper()
+
+    scoreboard = {
+        "inning": int(inning),
+        "is_top": bool(linescore.get("isTopInning", True)),
+        "outs": int(outs),
+        "on_1b": on_1b,
+        "on_2b": on_2b,
+        "on_3b": on_3b,
+        "away_abbr": abbreviate(away_team) or "AWAY",
+        "home_abbr": abbreviate(home_team) or "HOME",
+        "away_name": away_team.get("name", "Away"),
+        "home_name": home_team.get("name", "Home"),
+        "away_runs": int(away_score),
+        "home_runs": int(home_score),
+    }
+    return state, scoreboard
 
 
 def get_user_timezone():
@@ -229,6 +256,70 @@ def show_empty_state():
             <div>
                 <strong>No live games right now</strong>
                 <p>Check back when today's schedule is underway.</p>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_scorebug(sb):
+    """Render the live game state the way a broadcast score bug would."""
+    # Drawn in this order so the diamond reads top, left, right on screen.
+    bases = "".join(
+        '<span class="scorebug__base scorebug__base--{0}{1}"></span>'.format(
+            corner, " is-on" if sb[key] else ""
+        )
+        for corner, key in (("second", "on_2b"), ("third", "on_3b"), ("first", "on_1b"))
+    )
+    outs = "".join(
+        '<span class="scorebug__out{0}"></span>'.format(
+            " is-out" if recorded < sb["outs"] else ""
+        )
+        for recorded in range(3)
+    )
+
+    # The arrow points up in the top of the inning, down in the bottom, and the
+    # side that is up to bat is the one carrying the runs that can still change.
+    half = "Top" if sb["is_top"] else "Bottom"
+    arrow = "up" if sb["is_top"] else "down"
+    away_batting = " is-batting" if sb["is_top"] else ""
+    home_batting = "" if sb["is_top"] else " is-batting"
+
+    runners = [
+        corner
+        for corner, key in (("first", "on_1b"), ("second", "on_2b"), ("third", "on_3b"))
+        if sb[key]
+    ]
+    # The graphic carries all of this visually, so it is one image to a screen
+    # reader with the whole state spelled out rather than a pile of empty spans.
+    label = (
+        f'{half} of the {sb["inning"]}, {sb["outs"]} out, '
+        f'{"runners on " + ", ".join(runners) if runners else "bases empty"}. '
+        f'{sb["away_name"]} {sb["away_runs"]}, {sb["home_name"]} {sb["home_runs"]}.'
+    )
+
+    st.markdown(
+        f"""
+        <div class="scorebug" role="img" aria-label="{escape(label)}">
+            <div class="scorebug__teams">
+                <div class="scorebug__row{away_batting}">
+                    <span class="scorebug__abbr">{escape(sb["away_abbr"])}</span>
+                    <span class="scorebug__runs">{sb["away_runs"]}</span>
+                </div>
+                <div class="scorebug__row{home_batting}">
+                    <span class="scorebug__abbr">{escape(sb["home_abbr"])}</span>
+                    <span class="scorebug__runs">{sb["home_runs"]}</span>
+                </div>
+            </div>
+            <div class="scorebug__inning">
+                <span class="scorebug__arrow scorebug__arrow--{arrow}"></span>
+                <span class="scorebug__frame">{sb["inning"]}</span>
+            </div>
+            <div class="scorebug__diamond">{bases}</div>
+            <div class="scorebug__outs">
+                <span class="scorebug__outs-label">Out</span>
+                <span class="scorebug__outs-dots">{outs}</span>
             </div>
         </div>
         """,
@@ -289,10 +380,16 @@ if not live_games:
 else:
     game_options = {game["matchup"]: game for game in live_games}
     selected_matchup = st.selectbox(
+        # Kept for screen readers but hidden - the placeholder already says what
+        # the control is for.
         "Live matchup",
         options=list(game_options.keys()),
         index=None,
         placeholder="Choose a game",
+        label_visibility="collapsed",
+        # Named so the baseball component can read the selection at the top of
+        # the script, before this widget exists.
+        key="matchup",
     )
 
     if selected_matchup:
@@ -300,7 +397,7 @@ else:
 
         try:
             with st.spinner(f"Refreshing {selected_matchup}..."):
-                state_dict, summary = get_live_game_state(
+                state_dict, scoreboard = get_live_game_state(
                     selected_game["id"],
                     selected_game.get("is_national_tv", 0),
                     selected_game.get("is_night_game", 0),
@@ -328,17 +425,11 @@ else:
         )
         mins_remaining = predicted_total_mins - minutes_elapsed
 
-        st.divider()
-        st.markdown(
-            '<p class="section-kicker">Current game state</p>',
-            unsafe_allow_html=True,
-        )
-        st.subheader(summary)
+        # The bug and the three metrics below it are self-describing, so they run
+        # without section headings above them, and the spacing in theme.css is
+        # what marks them as a group.
+        render_scorebug(scoreboard)
 
-        st.markdown(
-            '<p class="section-kicker section-kicker--forecast">Model forecast</p>',
-            unsafe_allow_html=True,
-        )
         result_col1, result_col2, result_col3 = st.columns(3)
 
         with result_col1:

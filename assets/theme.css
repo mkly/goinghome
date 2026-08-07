@@ -10,6 +10,16 @@
     --gold: #d9a95f;
     --gold-bright: #f0c77d;
     --danger: #c9675c;
+
+    /* Ball geometry. --ball-d / --ball-off are the visible ball's diameter and
+       its offset from the bottom-left corner, unchanged from the flat version.
+       The component's lens frames the ball at 60% of the canvas height, so the
+       iframe has to be 1.668x bigger and re-centred to leave the ball in the
+       same place. Change the lens and these two factors change with it. */
+    --ball-d: clamp(410px, 41vw, 640px);
+    --ball-off: clamp(-220px, -13vw, -126px);
+    --ball-frame: calc(var(--ball-d) * 1.668);
+    --ball-frame-off: calc(var(--ball-off) - var(--ball-d) * 0.334);
 }
 
 html,
@@ -27,8 +37,13 @@ body {
     background: var(--clubhouse);
 }
 
+/* 100vh on iOS Safari means the viewport as it would be with the toolbars
+   hidden, which is taller than what you can actually see. dvh is that same
+   measure tracking the toolbars as they come and go; vh stays first as the
+   fallback for anything that does not know the unit. */
 [data-testid="stAppViewContainer"] {
     min-height: 100vh;
+    min-height: 100dvh;
     overflow-x: hidden;
     background: var(--clubhouse);
 }
@@ -44,20 +59,31 @@ body {
     transform: scale(1.035);
 }
 
-[data-testid="stAppViewContainer"]::after {
-    position: fixed;
-    z-index: 1;
-    left: clamp(-220px, -13vw, -126px);
-    bottom: clamp(-220px, -13vw, -126px);
-    width: clamp(410px, 41vw, 640px);
-    aspect-ratio: 1;
-    content: "";
+/* The baseball is a Streamlit component, so it arrives as an iframe sitting in
+   the normal element flow. Collapse the wrapper it came in so it leaves no gap,
+   then park the iframe itself in the corner. */
+[data-testid="stElementContainer"]:has([data-testid="stCustomComponentV1"]) {
+    display: contents;
+}
+
+[data-testid="stCustomComponentV1"] {
+    position: fixed !important;
+    /* The component renders inside stMain, which is its own stacking context, so
+       any positive z-index here lands on top of the copy no matter how small.
+       Negative is what drops it below the block content - and below the gradient
+       wash too, which is what tints the ball into the scene. The stadium photo
+       is on an ancestor, so it still sits behind the ball. */
+    z-index: -1;
+    left: var(--ball-frame-off);
+    bottom: var(--ball-frame-off);
+    width: var(--ball-frame) !important;
+    height: var(--ball-frame) !important;
+    border: 0;
+    background: transparent !important;
+    color-scheme: normal;
+    /* Scenery now, so it takes no pointer - a drag that starts on it scrolls the
+       page like anywhere else. */
     pointer-events: none;
-    opacity: 0.9;
-    background: url("data:image/webp;base64,{{BASEBALL_URI}}") center / contain no-repeat;
-    filter: drop-shadow(28px -20px 38px rgba(0, 0, 0, 0.34));
-    transform-origin: 50% 50%;
-    animation: baseball-spin 180s linear infinite;
 }
 
 [data-testid="stHeader"] {
@@ -71,10 +97,17 @@ footer {
     display: none;
 }
 
+/* This is the element that actually scrolls - the document behind it never
+   moves - so its height is the window you read the page through, and it has to
+   be the height you can really see. Under 100vh on iOS it was laid out to the
+   toolbar-less height instead, which put its last ~90px, and the details block
+   sitting in them, underneath the toolbar with no way to bring them up: the
+   document does not scroll, so the toolbar never retracts to uncover them. */
 [data-testid="stMain"] {
     position: relative;
     z-index: 2;
     min-height: 100vh;
+    min-height: 100dvh;
     overflow-x: hidden !important;
     overflow-y: auto !important;
     overscroll-behavior-y: contain;
@@ -112,12 +145,6 @@ footer {
 
 [data-testid="stMainBlockContainer"]::before {
     display: none;
-}
-
-@keyframes baseball-spin {
-    0% { transform: translate3d(0, -8px, 0) rotate(0deg); }
-    50% { transform: translate3d(-18px, 14px, 0) rotate(180deg); }
-    100% { transform: translate3d(0, -8px, 0) rotate(360deg); }
 }
 
 .hero {
@@ -207,18 +234,172 @@ footer {
     line-height: 1.5;
 }
 
-[data-testid="stMainBlockContainer"] .section-kicker {
-    margin: 0 0 8px !important;
+/* ---------------------------------------------------------------- score bug
+   The live game state, laid out the way a broadcast bug is: score on the left,
+   then the inning, the diamond, and the outs. No panel behind it - it floats on
+   the stadium the way an on-air bug does, so the marks themselves carry the
+   contrast and each one gets a shadow rather than a plate. Every rule is scoped
+   under .scorebug because the container's blanket `span { color: chalk-muted }`
+   above is more specific than a lone class would be. */
+.scorebug {
+    display: flex;
+    align-items: center;
+    gap: clamp(18px, 3.4vw, 34px);
+    /* fit-content keeps the four blocks grouped at the left edge - a full-width
+       row would spread them across the column. */
+    width: fit-content;
+    max-width: 100%;
+    /* No margin of its own - the rhythm rules below own the spacing, and a local
+       nudge here is exactly what makes the gaps above and below disagree. */
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.scorebug .scorebug__abbr,
+.scorebug .scorebug__runs,
+.scorebug .scorebug__frame,
+.scorebug .scorebug__outs-label {
+    text-shadow: 0 1px 10px rgba(2, 9, 6, 0.9), 0 1px 2px rgba(2, 9, 6, 0.8);
+}
+
+.scorebug .scorebug__teams {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 108px;
+}
+
+.scorebug .scorebug__row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 18px;
+}
+
+.scorebug .scorebug__abbr {
+    color: var(--chalk-dim);
+    font-size: 0.85rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+}
+
+.scorebug .scorebug__runs {
     color: var(--chalk-muted);
-    font-size: 0.75rem;
+    font-size: 1.15rem;
+    font-weight: 650;
+    line-height: 1;
+}
+
+/* The side at bat is the one whose runs can still move, so it is the one lit. */
+.scorebug .scorebug__row.is-batting .scorebug__abbr,
+.scorebug .scorebug__row.is-batting .scorebug__runs {
+    color: var(--chalk);
+}
+
+.scorebug .scorebug__inning {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+}
+
+/* Up in the top half, down in the bottom - a solid triangle made of borders. */
+.scorebug .scorebug__arrow {
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+}
+
+.scorebug .scorebug__arrow--up {
+    border-bottom: 8px solid var(--gold-bright);
+}
+
+.scorebug .scorebug__arrow--down {
+    border-top: 8px solid var(--gold-bright);
+}
+
+.scorebug .scorebug__frame {
+    color: var(--chalk);
+    font-size: 1.3rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+/* Bases are squares turned 45 degrees, placed by corner in a square box, so the
+   three of them read as the top, left and right points of a diamond. */
+.scorebug .scorebug__diamond {
+    position: relative;
+    width: 62px;
+    height: 62px;
+    flex: none;
+}
+
+/* Without a plate behind them the hairlines have to hold their own against a
+   photo, so they run brighter than panel outlines would and carry a shadow. */
+.scorebug .scorebug__base {
+    position: absolute;
+    width: 17px;
+    height: 17px;
+    border: 1px solid rgba(232, 238, 225, 0.5);
+    background: transparent;
+    box-shadow: 0 1px 6px rgba(2, 9, 6, 0.75);
+}
+
+.scorebug .scorebug__base--second {
+    top: 2px;
+    left: 50%;
+    transform: translateX(-50%) rotate(45deg);
+}
+
+.scorebug .scorebug__base--third {
+    top: 50%;
+    left: 2px;
+    transform: translateY(-50%) rotate(45deg);
+}
+
+.scorebug .scorebug__base--first {
+    top: 50%;
+    right: 2px;
+    transform: translateY(-50%) rotate(45deg);
+}
+
+.scorebug .scorebug__base.is-on {
+    border-color: var(--gold-bright);
+    background: var(--gold-bright);
+    box-shadow: 0 0 10px rgba(240, 199, 125, 0.4);
+}
+
+.scorebug .scorebug__outs {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.scorebug .scorebug__outs-label {
+    color: var(--chalk-dim);
+    font-size: 0.66rem;
     font-weight: 700;
     letter-spacing: 0.16em;
-    line-height: 1.4;
+    line-height: 1;
     text-transform: uppercase;
 }
 
-[data-testid="stMainBlockContainer"] .section-kicker--forecast {
-    margin-top: 24px !important;
+.scorebug .scorebug__outs-dots {
+    display: flex;
+    gap: 5px;
+}
+
+.scorebug .scorebug__out {
+    width: 9px;
+    height: 9px;
+    border: 1px solid rgba(232, 238, 225, 0.5);
+    border-radius: 50%;
+    box-shadow: 0 1px 6px rgba(2, 9, 6, 0.75);
+}
+
+.scorebug .scorebug__out.is-out {
+    border-color: var(--danger);
+    background: var(--danger);
 }
 
 [data-testid="stMainBlockContainer"] h2,
@@ -234,10 +415,48 @@ footer {
     color: var(--chalk-muted);
 }
 
-[data-testid="stMainBlockContainer"] hr {
-    height: 0 !important;
-    margin: 16px 0 !important;
-    border: 0 !important;
+/* --------------------------------------------------------- vertical rhythm
+   Streamlit gives every block in the column the same 16px gap, which leaves the
+   page evenly spaced but flat - nothing tells you which pieces belong together.
+   These rules add to that gap rather than replacing it, so 16px stays the step
+   between related things and 32px opens up between groups. The score bug and
+   the three metrics are one readout and stay tight; the picker above them and
+   the details below are separate steps and get the wider gap. */
+[data-testid="stMainBlockContainer"] [data-testid="stElementContainer"]:has([data-testid="stSelectbox"]),
+[data-testid="stMainBlockContainer"] [data-testid="stElementContainer"]:has(.scorebug),
+/* The expander is wrapped in a layout wrapper rather than an element container,
+   so it needs its own selector or the wider gap above the details never lands. */
+[data-testid="stMainBlockContainer"] [data-testid="stLayoutWrapper"]:has([data-testid="stExpander"]),
+/* The metrics get the wider gap for a different reason: an element container
+   measures 16px shorter than what it holds, so the score bug's block ends
+   partway up the bug and the flex gap below it is spent on space the bug is
+   already using. This puts that 16px back, leaving the intended step between
+   the bug and the row it belongs with. */
+[data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"] {
+    margin-top: 16px;
+}
+
+/* Streamlit wraps the body of every markdown block in a row flex box. Whatever
+   it is for, it measures 16px shorter than the content it holds - the score bug
+   paints 50px tall inside a 34px box, the hero 230 inside 214 - so each block
+   bleeds into the gap below it and the rhythm above is spent on space that is
+   already occupied. Plain block flow reports the real height. The inner
+   container is a block either way, so nothing else about the layout moves. */
+[data-testid="stMainBlockContainer"] [data-testid="stMarkdown"] > div {
+    display: block;
+}
+
+/* The column is a flex box and Streamlit leaves its children at the default
+   flex-shrink: 1 with min-height: 0, which switches off the automatic minimum
+   size. So as soon as the page's min-height gives the column a definite height,
+   any overflow is taken out of the blocks themselves instead of the page
+   scrolling. On a phone that squeezed 16px out of the score bug and dropped its
+   bottom edge onto the metrics. Nothing here should ever be shorter than what it
+   holds - let the page grow instead. */
+[data-testid="stMainBlockContainer"] [data-testid="stElementContainer"],
+[data-testid="stMainBlockContainer"] [data-testid="stLayoutWrapper"],
+[data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"] {
+    flex-shrink: 0;
 }
 
 [data-testid="stSelectbox"] label {
@@ -452,7 +671,7 @@ footer {
         width: 100%;
         min-height: 100%;
         margin: 0;
-        padding: 64px 28px 112px;
+        padding: 64px 28px 64px;
     }
 
     [data-testid="stMainBlockContainer"]::before {
@@ -464,15 +683,54 @@ footer {
         transform: scale(1.08);
     }
 
-    [data-testid="stAppViewContainer"]::after {
-        left: -118px;
-        bottom: -118px;
-        width: 360px;
-        opacity: 0.88;
+    /* A narrow screen has no room to spare, so the ball comes down in size and
+       pulls further into the corner. */
+    :root {
+        --ball-d: 360px;
+        --ball-off: -118px;
     }
 
+    /* The bug is four blocks in a row, which is more than a phone has room for -
+       everything tightens and the diamond comes down a size rather than the row
+       wrapping into something that no longer reads as a score bug. */
+    .scorebug {
+        gap: 16px;
+    }
+
+    .scorebug .scorebug__teams {
+        min-width: 88px;
+    }
+
+    .scorebug .scorebug__row {
+        gap: 10px;
+    }
+
+    .scorebug .scorebug__diamond {
+        width: 50px;
+        height: 50px;
+    }
+
+    .scorebug .scorebug__base {
+        width: 14px;
+        height: 14px;
+    }
+
+    /* The three metrics sit side by side on a wide screen, so one gap above the
+       row is enough to mark them as a group. Stacked on a phone they become
+       three more rows in the same column, and at the full 16px step the score
+       bug above them reads as a fourth one. 8px between them binds them back
+       into one readout; the 16px restores the group's own edge, which the score
+       bug's block does not provide on its own - it measures 16px shorter than
+       the bug actually paints, so the gap above lands under it. */
+    [data-testid="stMainBlockContainer"] [data-testid="stHorizontalBlock"] {
+        row-gap: 8px;
+    }
+
+    /* 22px here plus the block gap put 38px between the lede and the picker,
+       which is neither of the two steps the rest of the page uses. 16px lands it
+       on 32, the same break that runs between every other group. */
     .hero {
-        padding-bottom: 22px;
+        padding-bottom: 16px;
     }
 
     .hero__brand {
@@ -497,8 +755,15 @@ footer {
         font-size: 0.56rem;
     }
 
+    /* Side by side, the floor keeps three metrics aligned when one of them wraps
+       and the padding holds them off their column edges. Stacked there is
+       nothing to align with and nothing beside them, so all that padding does is
+       set the spacing - and it set it wrong, leaving ~34px between metrics
+       against 8px up to the score bug, which reads the grouping backwards.
+       Stripped back, the gaps below are the only thing spacing them. */
     [data-testid="stMetric"] {
-        min-height: 72px;
+        min-height: 0;
+        padding: 0;
     }
 
     .feature-grid {
@@ -524,8 +789,5 @@ footer {
     }
 }
 
-@media (prefers-reduced-motion: reduce) {
-    [data-testid="stAppViewContainer"]::after {
-        animation: none;
-    }
-}
+/* Reduced motion is handled inside the component, which parks the tumble and
+   ignores the scroll kick. */
