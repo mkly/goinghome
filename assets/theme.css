@@ -788,6 +788,3 @@ footer {
         font-size: 1.08rem;
     }
 }
-
-/* Reduced motion is handled inside the component, which parks the tumble and
-   ignores the scroll kick. */
